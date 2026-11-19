@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="96" viewBox="0 0 320 96" role="img" aria-label="DebianDay Bolivia">
+  <defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#a3e635"/><stop offset="1" stop-color="#4f7cff"/></linearGradient></defs>
+  <rect x="4" y="12" width="72" height="72" rx="18" fill="#0a1224" stroke="url(#g)" stroke-width="3"/>
+  <text x="19" y="58" fill="#a3e635" font-family="ui-monospace,monospace" font-size="24" font-weight="700">&gt;_</text>
+  <text x="94" y="47" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="27" font-weight="800">DebianDay</text>
+  <text x="95" y="72" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="15" letter-spacing="3">BOLIVIA 2026</text>
+</svg>

@@ -1,0 +1,5 @@
+/.build.*
+/.smoke*
+*.bak
+.DS_Store
+public/
