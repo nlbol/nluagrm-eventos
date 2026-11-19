@@ -34,6 +34,7 @@ SLIDER_IMAGES=(
 SLIDER_INTERVAL=5000
 
 OUTPUT_DIR="public"
+CNAME_NAME="eventos.nluagrm.org"
 
 # Colores manuales opcionales. Dejar vacío para derivarlos del afiche.
 # Ejemplo: COLOR_ACCENT="#a3e635"
@@ -1102,6 +1103,9 @@ build() {
   [[ -s "$BUILD_DIR/index.html" && -s "$BUILD_DIR/style.css" && -s "$BUILD_DIR/script.js" ]] ||
     die "la salida generada está incompleta"
   grep -q '<title>' "$BUILD_DIR/index.html" || die "index.html no tiene título"
+
+  echo "$CNAME_NAME" > "$BUILD_DIR/CNAME"
+
 }
 
 publish() {
