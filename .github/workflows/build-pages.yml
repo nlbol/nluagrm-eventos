@@ -1,44 +1,137 @@
-name: Build y deploy a GitHub Pages
+
+name: Generate and Deploy Event Website
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy-public
+  cancel-in-progress: false
 
 jobs:
-  build:
+  generate-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Generar sitio
-        run: ./generate.sh
-
-      - name: Configurar Pages
-        uses: actions/configure-pages@v5
-
-      - name: Subir artefacto
-        uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          fetch-depth: 0
+          token: ${{ github.token }}
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Desplegar
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure main branch exists
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          git fetch origin --prune
+
+          if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+            echo "La rama main ya existe."
+
+            git checkout main
+            git pull --ff-only origin main
+          else
+            echo "La rama main no existe. Creándola..."
+
+            git checkout -b main
+            git push -u origin main
+          fi
+
+      - name: Generate website
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ ! -f "./generate.sh" ]]; then
+            echo "::error::No se encontró generate.sh en la raíz del repositorio."
+            exit 1
+          fi
+
+          bash ./generate.sh
+
+      - name: Validate generated website
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ ! -d "public" ]]; then
+            echo "::error::No existe el directorio public/"
+            exit 1
+          fi
+
+          if [[ ! -f "public/index.html" ]]; then
+            echo "::error::No se generó public/index.html"
+            exit 1
+          fi
+
+          if [[ -z "$(find public -type f -print -quit)" ]]; then
+            echo "::error::El directorio public está vacío."
+            exit 1
+          fi
+
+          echo "Sitio generado correctamente."
+
+      - name: Deploy to public branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          DEPLOY_DIR="${RUNNER_TEMP}/deploy-public"
+
+          git fetch origin public || true
+
+          # Eliminar un worktree anterior si existiera
+          git worktree remove "$DEPLOY_DIR" --force 2>/dev/null || true
+          rm -rf "$DEPLOY_DIR"
+
+          if git ls-remote --exit-code --heads origin public >/dev/null 2>&1; then
+            echo "La rama public existe. Actualizando..."
+
+            git worktree add "$DEPLOY_DIR" origin/public
+          else
+            echo "La rama public no existe. Creándola..."
+
+            git worktree add --detach "$DEPLOY_DIR" main
+            git -C "$DEPLOY_DIR" switch --orphan public
+          fi
+
+          # Limpiar el contenido anterior de la rama public
+          git -C "$DEPLOY_DIR" rm -rf . || true
+          git -C "$DEPLOY_DIR" clean -fdx
+
+          # Copiar exclusivamente el contenido generado
+          cp -a public/. "$DEPLOY_DIR/"
+
+          # Registrar los cambios
+          git -C "$DEPLOY_DIR" add -A
+
+          if git -C "$DEPLOY_DIR" diff --cached --quiet; then
+            echo "No hay cambios que publicar."
+          else
+            git -C "$DEPLOY_DIR" commit -m "Deploy website [skip ci]"
+            git -C "$DEPLOY_DIR" push origin public
+            echo "Sitio desplegado correctamente en la rama public."
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment exitoso 🚀" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rama fuente: main" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Generador: generate.sh" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Directorio generado: public/" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rama destino: public" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Hosting: GitHub Pages" >> "$GITHUB_STEP_SUMMARY"
