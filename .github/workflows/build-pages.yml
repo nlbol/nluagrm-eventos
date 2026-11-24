@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -16,13 +15,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  generate-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Configure Git
@@ -30,69 +30,62 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Ensure main branch exists
-        shell: bash
+      - name: Verify project
         run: |
-          set -Eeuo pipefail
+          set -e
 
-          git fetch origin
+          echo "Directorio de trabajo:"
+          pwd
 
-          if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
-            echo "La rama main existe."
+          echo "Contenido del repositorio:"
+          ls -la
 
-            git fetch origin main
-            git checkout -B main origin/main
-
-          else
-            echo "La rama main no existe. Creándola desde el commit actual."
-
-            git checkout -B main
-            git push -u origin main
+          if [ ! -f generate.sh ]; then
+            echo "::error::No se encuentra generate.sh en la raíz."
+            exit 1
           fi
 
       - name: Generate website
-        shell: bash
         run: |
           set -Eeuo pipefail
 
-          if [[ ! -f generate.sh ]]; then
-            echo "::error::No existe generate.sh en la raíz del repositorio."
-            exit 1
-          fi
-
-          chmod +x generate.sh
+          chmod +x ./generate.sh
           ./generate.sh
 
-      - name: Validate generated website
-        shell: bash
+      - name: Verify generated public directory
         run: |
           set -Eeuo pipefail
 
-          if [[ ! -d public ]]; then
-            echo "::error::No se generó el directorio public/"
+          echo "Contenido de public:"
+          ls -lah public/
+
+          if [ ! -f public/index.html ]; then
+            echo "::error::Falta public/index.html"
             exit 1
           fi
 
-          if [[ ! -f public/index.html ]]; then
-            echo "::error::No se generó public/index.html"
-            exit 1
-          fi
-
-          echo "Web generada correctamente."
+          echo "Archivos que serán publicados:"
+          find public -type f
 
       - name: Deploy to public branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
+          publish_dir: ./public/
           publish_branch: public
+          destination_dir: .
           force_orphan: true
+          keep_files: false
+          commit_message: "Deploy website from main"
 
-      - name: Deployment summary
+      - name: Verify deployment
         run: |
-          echo "## 🚀 Despliegue completado" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Deploy completado" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Rama de origen: main" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Directorio: public/" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Rama de publicación: public" >> "$GITHUB_STEP_SUMMARY"
-          echo "- GitHub Pages: listo para publicar" >> "$GITHUB_STEP_SUMMARY"
+          echo "La web se publicó en la raíz de la rama public." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Contenido esperado:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- index.html" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CSS y JavaScript" >> "$GITHUB_STEP_SUMMARY"
+          echo "- assets/" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CNAME (si está configurado)" >> "$GITHUB_STEP_SUMMARY"
