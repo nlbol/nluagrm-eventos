@@ -24,7 +24,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ github.token }}
 
       - name: Configure Git
         run: |
@@ -36,17 +35,18 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          git fetch origin --prune
+          git fetch origin
 
           if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
-            echo "La rama main ya existe."
+            echo "La rama main existe."
 
-            git checkout main
-            git pull --ff-only origin main
+            git fetch origin main
+            git checkout -B main origin/main
+
           else
-            echo "La rama main no existe. Creándola..."
+            echo "La rama main no existe. Creándola desde el commit actual."
 
-            git checkout -b main
+            git checkout -B main
             git push -u origin main
           fi
 
@@ -55,83 +55,44 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          if [[ ! -f "./generate.sh" ]]; then
-            echo "::error::No se encontró generate.sh en la raíz del repositorio."
+          if [[ ! -f generate.sh ]]; then
+            echo "::error::No existe generate.sh en la raíz del repositorio."
             exit 1
           fi
 
-          bash ./generate.sh
+          chmod +x generate.sh
+          ./generate.sh
 
       - name: Validate generated website
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          if [[ ! -d "public" ]]; then
-            echo "::error::No existe el directorio public/"
+          if [[ ! -d public ]]; then
+            echo "::error::No se generó el directorio public/"
             exit 1
           fi
 
-          if [[ ! -f "public/index.html" ]]; then
+          if [[ ! -f public/index.html ]]; then
             echo "::error::No se generó public/index.html"
             exit 1
           fi
 
-          if [[ -z "$(find public -type f -print -quit)" ]]; then
-            echo "::error::El directorio public está vacío."
-            exit 1
-          fi
-
-          echo "Sitio generado correctamente."
+          echo "Web generada correctamente."
 
       - name: Deploy to public branch
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          DEPLOY_DIR="${RUNNER_TEMP}/deploy-public"
-
-          git fetch origin public || true
-
-          # Eliminar un worktree anterior si existiera
-          git worktree remove "$DEPLOY_DIR" --force 2>/dev/null || true
-          rm -rf "$DEPLOY_DIR"
-
-          if git ls-remote --exit-code --heads origin public >/dev/null 2>&1; then
-            echo "La rama public existe. Actualizando..."
-
-            git worktree add "$DEPLOY_DIR" origin/public
-          else
-            echo "La rama public no existe. Creándola..."
-
-            git worktree add --detach "$DEPLOY_DIR" main
-            git -C "$DEPLOY_DIR" switch --orphan public
-          fi
-
-          # Limpiar el contenido anterior de la rama public
-          git -C "$DEPLOY_DIR" rm -rf . || true
-          git -C "$DEPLOY_DIR" clean -fdx
-
-          # Copiar exclusivamente el contenido generado
-          cp -a public/. "$DEPLOY_DIR/"
-
-          # Registrar los cambios
-          git -C "$DEPLOY_DIR" add -A
-
-          if git -C "$DEPLOY_DIR" diff --cached --quiet; then
-            echo "No hay cambios que publicar."
-          else
-            git -C "$DEPLOY_DIR" commit -m "Deploy website [skip ci]"
-            git -C "$DEPLOY_DIR" push origin public
-            echo "Sitio desplegado correctamente en la rama public."
-          fi
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: public
+          force_orphan: true
 
       - name: Deployment summary
         run: |
-          echo "## Deployment exitoso 🚀" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 🚀 Despliegue completado" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Rama fuente: main" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Generador: generate.sh" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Directorio generado: public/" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Rama destino: public" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Hosting: GitHub Pages" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rama de origen: main" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Directorio: public/" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rama de publicación: public" >> "$GITHUB_STEP_SUMMARY"
+          echo "- GitHub Pages: listo para publicar" >> "$GITHUB_STEP_SUMMARY"
