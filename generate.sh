@@ -17,9 +17,9 @@ EVENT_TIMEZONE="America/La_Paz"
 EVENT_MODE="online"
 EVENT_LOCATION="Santa Cruz de la Sierra, Bolivia"
 EVENT_MAP_URL="https://www.openstreetmap.org/search?query=Santa%20Cruz%20de%20la%20Sierra"
-EVENT_URL="https://meet.google.com"
+EVENT_URL="https://meet.google.com/rwj-hocw-buf"
 
-REGISTER_ENABLED=true
+REGISTER_ENABLED=false
 REGISTER_URL="https://cloud.nluagrm.org/"
 REGISTER_LABEL="Registrarme"
 
@@ -34,7 +34,7 @@ SLIDER_IMAGES=(
 SLIDER_INTERVAL=5000
 
 # Secciones independientes.
-SHOW_EVENT_DETAILS=true
+SHOW_EVENT_DETAILS=false
 SHOW_TALKS=true
 SECTION_TALKS_TITLE="Charlas y participantes"
 
