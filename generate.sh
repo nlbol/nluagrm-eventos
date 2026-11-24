@@ -23,21 +23,38 @@ REGISTER_ENABLED=true
 REGISTER_URL="https://cloud.nluagrm.org/"
 REGISTER_LABEL="Registrarme"
 
-POSTER="assets/poster.svg"
+POSTER="assets/poster.png"
 POSTER_ALT="Afiche de HackPoint 2026"
 
 SLIDER_IMAGES=(
-  "assets/slider/01.svg"
-  "assets/slider/02.svg"
-  "assets/slider/03.svg"
+  "assets/slider/01.png"
+  "assets/slider/02.png"
+  "assets/slider/03.png"
 )
 SLIDER_INTERVAL=5000
+
+# Secciones independientes.
+SHOW_EVENT_DETAILS=true
+SHOW_TALKS=true
+SECTION_TALKS_TITLE="Charlas y participantes"
+
+# Inicio: EVENT_DATE + EVENT_TIME en EVENT_TIMEZONE.
+# EVENT_END_DATE vacío = sin fin; el evento se considera en curso.
+EVENT_END_DATE=""
+EVENT_END_TIME=""              # vacío => 23:59 de EVENT_END_DATE
+EVENT_STARTING_DURATION=300    # segundos del estado "INICIANDO"
+
+# Optimización WebP (los originales nunca se modifican).
+CONVERT_WEBP=true
+WEBP_QUALITY=82                # 1-100; se ignora si WEBP_LOSSLESS=true
+WEBP_LOSSLESS=false
+WEBP_INSTALL_TOOLS=false       # true permite proponer instalación con confirmación
 
 OUTPUT_DIR="public"
 CNAME_NAME="eventos.nluagrm.org"
 
-# Colores manuales opcionales. Dejar vacío para derivarlos del afiche.
-# Ejemplo: COLOR_ACCENT="#a3e635"
+# Colores manuales opcionales. Vacío = identidad fija del afiche HackPoint.
+# Ejemplo: COLOR_ACCENT="#00FFA3"
 COLOR_ACCENT=""
 COLOR_SECONDARY=""
 COLOR_BACKGROUND=""
@@ -46,7 +63,7 @@ COLOR_BACKGROUND=""
 # FIN DE LA CONFIGURACIÓN
 # ============================================================
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 DRY_RUN=0
 CHECK_ONLY=0
 NO_SLIDER=0
@@ -54,6 +71,13 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 BUILD_DIR=""
 OUTPUT_ABS=""
 ASSET_COUNT=0
+WEBP_CACHE="$PROJECT_DIR/.webp-cache"
+WEBP_BIN=""
+WEBP_KIND=""
+WEBP_COUNT=0
+WEBP_POSTER=0
+WEBP_SLIDER=()
+WEBP_FAVICON=0
 
 log() { printf '[generate] %s\n' "$*"; }
 warn() { printf '[generate] advertencia: %s\n' "$*" >&2; }
@@ -108,6 +132,18 @@ valid_date() {
   return 0
 }
 
+valid_time() {
+  [[ $1 =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]
+}
+
+valid_bool() {
+  case "$1" in true|false) return 0 ;; *) return 1 ;; esac
+}
+
+valid_uint() {
+  [[ $1 =~ ^[0-9]+$ ]] && ((10#$1 >= $2 && 10#$1 <= $3))
+}
+
 parse_args() {
   while (($#)); do
     case "$1" in
@@ -158,17 +194,250 @@ resolve_asset() {
   RESOLVED_ASSET=$absolute
 }
 
+# --- Optimización WebP ----------------------------------------------------
+# Los originales nunca se sobrescriben. Las copias WebP se guardan en
+# .webp-cache/ y se reutilizan si son más recientes que el original.
+
+detect_webp_tool() {
+  local encoders=""
+  WEBP_BIN=""
+  WEBP_KIND=""
+  if command -v cwebp >/dev/null 2>&1; then
+    WEBP_BIN=cwebp; WEBP_KIND=cwebp; return 0
+  fi
+  if command -v magick >/dev/null 2>&1; then
+    WEBP_BIN=magick; WEBP_KIND=magick; return 0
+  fi
+  if command -v convert >/dev/null 2>&1; then
+    WEBP_BIN=convert; WEBP_KIND=magick; return 0
+  fi
+  if command -v ffmpeg >/dev/null 2>&1; then
+    encoders=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
+    if [[ "$encoders" == *libwebp* ]]; then
+      WEBP_BIN=ffmpeg; WEBP_KIND=ffmpeg; return 0
+    fi
+  fi
+  return 1
+}
+
+PKG_BIN=""
+PKG_NAME=""
+PKG_HINT=""
+OS_NAME=""
+
+detect_package_manager() {
+  OS_NAME="$(uname -s 2>/dev/null || printf 'sistema desconocido')"
+  if [[ -r /etc/os-release ]]; then
+    local pretty
+    pretty=$(sed -n 's/^PRETTY_NAME="\?\([^"]*\)"\?.*/\1/p' /etc/os-release | head -n 1)
+    [[ -z "$pretty" ]] || OS_NAME=$pretty
+  fi
+  for PKG_BIN in apt dnf yum pacman zypper apk; do
+    command -v "$PKG_BIN" >/dev/null 2>&1 || continue
+    case "$PKG_BIN" in
+      apt) PKG_NAME=webp ;;
+      dnf|yum|zypper) PKG_NAME=libwebp-tools ;;
+      pacman) PKG_NAME=libwebp ;;
+      apk) PKG_NAME=libwebp-tools ;;
+    esac
+    PKG_HINT="$PKG_BIN install $PKG_NAME"
+    [[ "$PKG_BIN" != pacman ]] || PKG_HINT="pacman -S $PKG_NAME"
+    [[ "$PKG_BIN" != apk ]] || PKG_HINT="apk add $PKG_NAME"
+    return 0
+  done
+  PKG_BIN=""
+  PKG_NAME=""
+  PKG_HINT="instala cwebp (libwebp) desde tu gestor de paquetes"
+  return 1
+}
+
+ensure_webp_tool() {
+  detect_webp_tool && return 0
+  [[ "$CONVERT_WEBP" == true ]] || return 1
+
+  detect_package_manager || true
+  warn "Sin herramienta WebP en $OS_NAME. Necesitas cwebp: $PKG_HINT"
+  if [[ "$WEBP_INSTALL_TOOLS" != true ]]; then
+    log "Se servirán los originales; la conversión se omite."
+    return 1
+  fi
+  if [[ ! -t 0 ]]; then
+    warn "Sin terminal interactiva: no se instalará nada. Instala manualmente: $PKG_HINT"
+    return 1
+  fi
+
+  local answer=""
+  printf '[generate] ¿Instalar %s ahora? [s/N] ' "$PKG_NAME" >&2
+  IFS= read -r answer || answer=""
+  case "${answer,,}" in
+    s|si|sí|y|yes) ;;
+    *) log "Instalación cancelada."; return 1 ;;
+  esac
+  if (( EUID != 0 )); then
+    warn "Se requieren permisos de administrador: ejecuta '$PKG_HINT' con sudo y vuelve a generar."
+    return 1
+  fi
+  [[ -n "$PKG_BIN" ]] || return 1
+  case "$PKG_BIN" in
+    apt|dnf|yum|zypper) "$PKG_BIN" install -y "$PKG_NAME" ;;
+    pacman) "$PKG_BIN" -S --noconfirm "$PKG_NAME" ;;
+    apk) "$PKG_BIN" add "$PKG_NAME" ;;
+    *) warn "Gestor de paquetes no soportado para instalación automática."; return 1 ;;
+  esac
+  detect_webp_tool || { warn "La herramienta sigue sin estar disponible."; return 1; }
+  return 0
+}
+
+is_image_file() {
+  local path=$1 mime=""
+  case "${path,,}" in
+    *.png|*.jpg|*.jpeg|*.bmp|*.tif|*.tiff|*.gif|*.avif|*.webp|*.svg) ;;
+    *) return 1 ;;
+  esac
+  if command -v file >/dev/null 2>&1; then
+    mime=$(file -b --mime-type -- "$path" 2>/dev/null || true)
+    [[ -z "$mime" || "$mime" == image/* ]] || return 1
+  fi
+  return 0
+}
+
+webp_rel_for() {
+  local rel
+  if [[ "$1" == "$PROJECT_DIR"/assets/* ]]; then rel=${1#"$PROJECT_DIR"/assets/}
+  else rel=${1#assets/}; fi
+  printf 'assets/%s.webp' "${rel%.*}"
+}
+
+webp_cache_for() {
+  local rel key
+  if [[ "$1" == "$PROJECT_DIR"/assets/* ]]; then rel=${1#"$PROJECT_DIR"/assets/}
+  else rel=${1#assets/}; fi
+  key=${rel%.*}; key=${key//\//__}
+  printf '%s/%s.webp' "$WEBP_CACHE" "$key"
+}
+
+# Convierte un archivo a WebP. Éxito: 0. Fallo o no aplicable: 1.
+convert_to_webp() {
+  local source=$1 target=$2 tmp dir ok=0 rel=${3:-${1##*/}}
+  [[ -f "$source" && -s "$source" ]] || return 1
+  case "${source,,}" in
+    *.svg) log "SVG servido sin conversión: $rel"; return 1 ;;
+  esac
+  is_image_file "$source" || { warn "Formato no convertible a WebP: $rel"; return 1; }
+  [[ -s "$target" && "$target" -nt "$source" ]] && return 0
+
+  dir=$(dirname -- "$target")
+  mkdir -p -- "$dir" || return 1
+  # Un WebP ya optimizado solo se copia a la caché: no se recomprime.
+  if [[ "${source,,}" == *.webp ]]; then
+    if cp -- "$source" "$target"; then return 0; fi
+    warn "No se pudo copiar el WebP existente: $rel"
+    return 1
+  fi
+  tmp="$dir/.tmp.$$.${RANDOM}.webp"
+
+  case "$WEBP_KIND" in
+    cwebp)
+      if [[ "$WEBP_LOSSLESS" == true ]]; then
+        if cwebp -quiet -lossless -o "$tmp" "$source" >/dev/null 2>&1; then ok=1; fi
+      else
+        if cwebp -quiet -q "$WEBP_QUALITY" -o "$tmp" "$source" >/dev/null 2>&1; then ok=1; fi
+      fi
+      ;;
+    magick)
+      if [[ "$WEBP_LOSSLESS" == true ]]; then
+        if "$WEBP_BIN" "$source" -auto-orient -define webp:lossless=true \
+             -define webp:alpha-quality=100 "$tmp" >/dev/null 2>&1; then ok=1; fi
+      else
+        if "$WEBP_BIN" "$source" -auto-orient -quality "$WEBP_QUALITY" \
+             -define webp:alpha-quality=100 "$tmp" >/dev/null 2>&1; then ok=1; fi
+      fi
+      ;;
+    ffmpeg)
+      if [[ "$WEBP_LOSSLESS" == true ]]; then
+        if ffmpeg -nostdin -hide_banner -loglevel error -y -i "$source" \
+             -c:v libwebp -lossless 1 -pix_fmt yuva420p "$tmp" >/dev/null 2>&1; then ok=1; fi
+      else
+        if ffmpeg -nostdin -hide_banner -loglevel error -y -i "$source" \
+             -c:v libwebp -q:v "$WEBP_QUALITY" -pix_fmt yuva420p "$tmp" >/dev/null 2>&1; then ok=1; fi
+      fi
+      ;;
+  esac
+
+  if ((ok)) && [[ -s "$tmp" ]]; then
+    if mv -f -- "$tmp" "$target"; then return 0; fi
+  fi
+  rm -f -- "$tmp"
+  warn "No se pudo convertir a WebP: $rel"
+  return 1
+}
+
+prepare_webp() {
+  WEBP_COUNT=0; WEBP_POSTER=0; WEBP_SLIDER=(); WEBP_FAVICON=0
+  [[ "$CONVERT_WEBP" == true ]] || { log "Conversión WebP desactivada."; return 0; }
+  ensure_webp_tool || return 0
+
+  local i=0 image target
+  target=$(webp_cache_for "$POSTER_PATH")
+  if convert_to_webp "$POSTER_PATH" "$target" "$POSTER"; then
+    WEBP_POSTER=1; WEBP_COUNT=$((WEBP_COUNT + 1))
+  fi
+  for image in "${SLIDER_PATHS[@]}"; do
+    target=$(webp_cache_for "$image")
+    if convert_to_webp "$image" "$target" "${image##*/}"; then
+      WEBP_SLIDER[$i]=1; WEBP_COUNT=$((WEBP_COUNT + 1))
+    else
+      WEBP_SLIDER[$i]=0
+    fi
+    i=$((i + 1))
+  done
+  if [[ -f "$PROJECT_DIR/assets/favicon.png" ]]; then
+    target=$(webp_cache_for "$PROJECT_DIR/assets/favicon.png")
+    if convert_to_webp "$PROJECT_DIR/assets/favicon.png" "$target" "favicon.png"; then
+      WEBP_FAVICON=1; WEBP_COUNT=$((WEBP_COUNT + 1))
+    fi
+  fi
+  ASSET_COUNT=$((ASSET_COUNT + WEBP_COUNT))
+  log "WebP: $WEBP_COUNT imagen(es) optimizada(s) con $WEBP_KIND ($WEBP_BIN)"
+}
+
 validate() {
   [[ -n "$EVENT_NAME" ]] || die "EVENT_NAME está vacío"
   [[ -n "$EVENT_DESCRIPTION" ]] || die "EVENT_DESCRIPTION está vacío"
   valid_date "$EVENT_DATE" || die "EVENT_DATE debe ser una fecha válida AAAA-MM-DD: $EVENT_DATE"
-  [[ $EVENT_TIME =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] ||
-    die "EVENT_TIME debe tener formato HH:MM: $EVENT_TIME"
+  valid_time "$EVENT_TIME" || die "EVENT_TIME debe tener formato HH:MM: $EVENT_TIME"
+  local zone_root zone_ok=0
+  for zone_root in /usr/share/zoneinfo /usr/lib/zoneinfo /etc/zoneinfo; do
+    if [[ -f "$zone_root/$EVENT_TIMEZONE" ]]; then zone_ok=1; break; fi
+  done
+  if ((zone_ok == 0)) && command -v timedatectl >/dev/null 2>&1; then
+    if timedatectl list-timezones 2>/dev/null | grep -qxF "$EVENT_TIMEZONE"; then zone_ok=1; fi
+  fi
+  ((zone_ok == 1)) || die "EVENT_TIMEZONE no es válida o no está disponible: $EVENT_TIMEZONE"
+  TZ="$EVENT_TIMEZONE" date +%z >/dev/null 2>&1 ||
+    die "EVENT_TIMEZONE no es usable: $EVENT_TIMEZONE"
   [[ "$EVENT_MODE" == presencial || "$EVENT_MODE" == online ]] ||
     die "EVENT_MODE debe ser 'presencial' u 'online': $EVENT_MODE"
-  [[ $SLIDER_INTERVAL =~ ^[0-9]+$ ]] &&
-    ((10#$SLIDER_INTERVAL >= 1000 && 10#$SLIDER_INTERVAL <= 120000)) ||
+  valid_uint "$SLIDER_INTERVAL" 1000 120000 ||
     die "SLIDER_INTERVAL debe ser un entero entre 1000 y 120000"
+  valid_uint "$EVENT_STARTING_DURATION" 0 86400 ||
+    die "EVENT_STARTING_DURATION debe ser un entero entre 0 y 86400"
+
+  if [[ -n "$EVENT_END_DATE" ]]; then
+    valid_date "$EVENT_END_DATE" || die "EVENT_END_DATE debe ser AAAA-MM-DD: $EVENT_END_DATE"
+    [[ -n "$EVENT_END_TIME" ]] || EVENT_END_TIME="23:59"
+    valid_time "$EVENT_END_TIME" || die "EVENT_END_TIME debe tener formato HH:MM: $EVENT_END_TIME"
+    [[ "${EVENT_END_DATE}T${EVENT_END_TIME}" > "${EVENT_DATE}T${EVENT_TIME}" ]] ||
+      die "EVENT_END debe ser posterior al inicio del evento"
+  fi
+
+  valid_bool "$SHOW_EVENT_DETAILS" || die "SHOW_EVENT_DETAILS debe ser true o false"
+  valid_bool "$SHOW_TALKS" || die "SHOW_TALKS debe ser true o false"
+  [[ -n "$SECTION_TALKS_TITLE" ]] || die "SECTION_TALKS_TITLE está vacío"
+  valid_bool "$CONVERT_WEBP" || die "CONVERT_WEBP debe ser true o false"
+  valid_bool "$WEBP_LOSSLESS" || die "WEBP_LOSSLESS debe ser true o false"
+  valid_bool "$WEBP_INSTALL_TOOLS" || die "WEBP_INSTALL_TOOLS debe ser true o false"
+  valid_uint "$WEBP_QUALITY" 1 100 || die "WEBP_QUALITY debe ser un entero entre 1 y 100"
 
   if [[ "$EVENT_MODE" == online ]]; then
     [[ -n "$EVENT_URL" ]] || warn "EVENT_MODE=online sin EVENT_URL: se muestra la modalidad sin enlace"
@@ -193,6 +462,10 @@ validate() {
     [[ -z "$value" || "$value" =~ ^#[0-9a-fA-F]{6}$ ]] ||
       die "los colores manuales deben ser hexadecimales de 6 dígitos: $value"
   done
+  if [[ -n "$CNAME_NAME" ]]; then
+    [[ "$CNAME_NAME" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] ||
+      die "CNAME_NAME no es un nombre de host válido: $CNAME_NAME"
+  fi
 
   RESOLVED_ASSET=""
   resolve_asset "$POSTER"
@@ -232,18 +505,38 @@ validate() {
 
 write_html() {
   local file=$1 title desc name location_line mode_label mode_class mode_icon
-  local action_html register_html poster_src poster_rel caption slider_html='' slide
-  local caption_html='' i=0 favicon=''
+  local action_html register_html poster_src poster_rel caption slider_html='' slide slide_img
+  local caption_html='' i=0 favicon='' poster_open='' poster_close=''
+  local nav_html='' details_html='' talks_title render_talks=0
+  local end_date='' end_time=''
 
   title=$(h "$EVENT_NAME")
   desc=$(h "$EVENT_DESCRIPTION")
   name=$(h "${EVENT_NAME%% *}")
+  talks_title=$(h "$SECTION_TALKS_TITLE")
   poster_rel=${POSTER#assets/}
   poster_src="assets/$poster_rel"
+  if ((WEBP_POSTER)) && [[ "${POSTER,,}" != *.webp ]]; then
+    poster_open="<picture><source srcset=\"$(h "$(webp_rel_for "$POSTER")")\" type=\"image/webp\">"
+    poster_close='</picture>'
+  fi
 
   favicon=''
   if [[ -f "$PROJECT_DIR/assets/favicon.png" ]]; then
     favicon='<link rel="icon" type="image/png" href="assets/favicon.png">'
+    if ((WEBP_FAVICON)); then
+      favicon="<link rel=\"icon\" type=\"image/webp\" href=\"$(h "$(webp_rel_for "$PROJECT_DIR/assets/favicon.png")")\">$favicon"
+    fi
+  fi
+
+  if [[ "$SHOW_EVENT_DETAILS" == true ]]; then
+    nav_html='      <a href="#detalles">Detalles</a>
+'
+  fi
+  if [[ "$SHOW_TALKS" == true && ${#SLIDER_PATHS[@]} -gt 0 ]]; then
+    render_talks=1
+    nav_html+="      <a href=\"#charlas\">$talks_title</a>
+"
   fi
 
   if [[ "$EVENT_MODE" == online ]]; then
@@ -274,14 +567,42 @@ write_html() {
     register_html=''
   fi
 
-  if (( ${#SLIDER_PATHS[@]} > 0 )); then
+  if [[ "$SHOW_EVENT_DETAILS" == true ]]; then
+    details_html=$(cat <<DETAILS
+        <ul class="facts" id="detalles" aria-label="Detalles del evento">
+          <li class="fact">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg>
+            <span data-fecha>$EVENT_DATE</span>
+          </li>
+          <li class="fact">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/></svg>
+            <span>$EVENT_TIME <small data-tz-label>$EVENT_TIMEZONE</small></span>
+          </li>
+          <li class="fact">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zM12 10a2.2 2.2 0 1 0 0 4.4A2.2 2.2 0 0 0 12 10z"/></svg>
+            <span>$location_line</span>
+          </li>
+        </ul>
+DETAILS
+)
+  fi
+
+  if ((render_talks)); then
     for image in "${SLIDER_PATHS[@]}"; do
       i=$((i + 1))
       slide="assets/${image#"$PROJECT_DIR"/assets/}"
-      slider_html+="          <figure class=\"slide\"><button class=\"slide__open\" type=\"button\" aria-label=\"Ampliar imagen $i\"><img src=\"$slide\" alt=\"Imagen destacada $i\" loading=\"lazy\" decoding=\"async\"></button></figure>
+      slide_img="<img src=\"$slide\" alt=\"Imagen destacada $i\" loading=\"lazy\" decoding=\"async\">"
+      if (( ${WEBP_SLIDER[$((i - 1))]:-0} > 0 )) && [[ "${image,,}" != *.webp ]]; then
+        slide_img="<picture><source srcset=\"$(h "$(webp_rel_for "$image")")\" type=\"image/webp\">$slide_img</picture>"
+      fi
+      slider_html+="          <figure class=\"slide\"><button class=\"slide__open\" type=\"button\" aria-label=\"Ampliar imagen $i\">$slide_img</button></figure>
 "
     done
     caption_html='      <p class="section__hint">Usa las flechas, las teclas ← → o desliza para explorar. Toca una imagen para ampliarla.</p>'
+  fi
+  if [[ -n "$EVENT_END_DATE" ]]; then
+    end_date=" data-end-date=\"$EVENT_END_DATE\""
+    end_time=" data-end-time=\"$EVENT_END_TIME\""
   fi
 
   cat > "$file" <<HTML
@@ -292,17 +613,19 @@ write_html() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <meta name="description" content="$desc">
-<meta name="theme-color" content="#0b1020">
+<meta name="theme-color" content="#080D12">
 <meta name="generator" content="generate.sh">
 <title>$title</title>
 $favicon
 <link rel="stylesheet" href="style.css">
 </head>
-<body id="inicio" data-interval="$SLIDER_INTERVAL" data-date="$EVENT_DATE" data-time="$EVENT_TIME" data-tz="$EVENT_TIMEZONE" data-accent="$(h "$COLOR_ACCENT")" data-secondary="$(h "$COLOR_SECONDARY")" data-background="$(h "$COLOR_BACKGROUND")">
+<body id="inicio" data-interval="$SLIDER_INTERVAL" data-date="$EVENT_DATE" data-time="$EVENT_TIME" data-tz="$EVENT_TIMEZONE"$end_date$end_time data-starting-duration="$EVENT_STARTING_DURATION" data-accent="$(h "$COLOR_ACCENT")" data-secondary="$(h "$COLOR_SECONDARY")" data-background="$(h "$COLOR_BACKGROUND")">
 
 <div class="ambient" aria-hidden="true">
   <span class="orb orb--one"></span>
   <span class="orb orb--two"></span>
+  <span class="hex hex--one"></span>
+  <span class="hex hex--two"></span>
   <span class="grid"></span>
 </div>
 
@@ -311,10 +634,7 @@ $favicon
 <header class="nav">
   <div class="wrap nav__inner">
     <a class="brand" href="#inicio"><span class="brand__prompt" aria-hidden="true">&gt;_</span> $name</a>
-    <nav class="nav__links" aria-label="Navegación principal">
-      <a href="#detalles">Detalles</a>
-      <a href="#destacos">Galería</a>
-    </nav>
+$(if [[ -n "$nav_html" ]]; then printf '    <nav class="nav__links" aria-label="Navegación principal">\n%s    </nav>\n' "$nav_html"; fi)
   </div>
 </header>
 
@@ -329,52 +649,41 @@ $favicon
         <h1 id="hero-title">$title</h1>
         <p class="lead">$desc</p>
 
-        <ul class="facts" id="detalles">
-          <li class="fact">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg>
-            <span data-fecha>$EVENT_DATE</span>
-          </li>
-          <li class="fact">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/></svg>
-            <span>$EVENT_TIME <small data-tz-label>$EVENT_TIMEZONE</small></span>
-          </li>
-          <li class="fact">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zM12 10a2.2 2.2 0 1 0 0 4.4A2.2 2.2 0 0 0 12 10z"/></svg>
-            <span>$location_line</span>
-          </li>
-        </ul>
+$details_html
 
         <div class="actions">
           $register_html
           $action_html
         </div>
 
-        <div class="countdown" data-countdown aria-live="polite"></div>
+        <div class="countdown" data-countdown></div>
+        <p class="sr-only" id="countdown-live" aria-live="polite" aria-atomic="true"></p>
       </div>
 
       <figure class="poster" id="poster">
         <button class="poster__open" type="button" aria-label="Ampliar afiche del evento">
-          <img id="poster-image" src="$poster_src" alt="$(h "$POSTER_ALT")" width="720" height="960" decoding="async">
+          $poster_open<img id="poster-image" src="$poster_src" alt="$(h "$POSTER_ALT")" width="720" height="960" decoding="async">$poster_close
         </button>
         <figcaption>$(h "$POSTER_ALT")</figcaption>
       </figure>
     </div>
   </section>
 
-$(if (( ${#SLIDER_PATHS[@]} > 0 )); then cat <<'SLIDER'
-  <section class="section" id="destacos" aria-labelledby="destacos-title">
+$(if ((render_talks)); then cat <<SLIDER
+  <section class="section section--talks" id="charlas" aria-labelledby="charlas-title">
+    <span class="sr-only" id="destacos"></span>
     <div class="wrap">
       <div class="section__head">
-        <p class="eyebrow">Galería</p>
-        <h2 id="destacos-title">Momentos para recordar</h2>
+        <p class="eyebrow">Programa</p>
+        <h2 id="charlas-title">$talks_title</h2>
       </div>
-      <div class="slider" id="slider" role="region" aria-roledescription="carrusel" aria-label="Imágenes destacadas" tabindex="0">
+      <div class="slider" id="slider" role="region" aria-roledescription="carrusel" aria-label="$talks_title" tabindex="0">
         <div class="slider__viewport">
           <div class="slider__track" id="slider-track">
 SLIDER
 fi)
 $slider_html
-$(if (( ${#SLIDER_PATHS[@]} > 0 )); then cat <<'SLIDER'
+$(if ((render_talks)); then cat <<'SLIDER'
           </div>
         </div>
         <button class="slider__nav slider__prev" id="slider-prev" type="button" aria-label="Imagen anterior">
@@ -390,7 +699,7 @@ $(if (( ${#SLIDER_PATHS[@]} > 0 )); then cat <<'SLIDER'
 SLIDER
 fi)
 $caption_html
-$(if (( ${#SLIDER_PATHS[@]} > 0 )); then printf '    </div>\n  </section>\n'; fi)
+$(if ((render_talks)); then printf '    </div>\n  </section>\n'; fi)
 </main>
 
 <footer class="footer">
@@ -427,18 +736,30 @@ HTML
 
 write_css() {
   cat > "$1" <<'CSS'
-/* Estilos base. Los colores se ajustan desde script.js según el afiche. */
+/* Identidad fija del afiche HackPoint: verde neón sobre negro azulado. */
 :root {
-  --accent: #a3e635;
-  --on-accent: #08110a;
-  --accent-secondary: #4f7cff;
-  --background: #0a0f1d;
-  --surface: #121a2e;
-  --glass: rgba(255, 255, 255, 0.07);
-  --text: #f4f7ff;
-  --muted: #a9b4cf;
-  --border: rgba(255, 255, 255, 0.14);
-  --shadow: rgba(2, 6, 18, 0.55);
+  --color-background: #080D12;
+  --color-primary: #00FFA3;
+  --color-secondary: #915DF0;
+  --color-white: #FFFFFF;
+  --color-text: #FFFFFF;
+  --color-muted: rgba(255, 255, 255, 0.72);
+  --color-glass: rgba(0, 255, 163, 0.045);
+  --color-glass-border: rgba(0, 255, 163, 0.22);
+  --color-accent: #00FFA3;
+  --color-shadow: rgba(0, 0, 0, 0.4);
+
+  /* Alias usados por las reglas existentes. */
+  --accent: var(--color-primary);
+  --on-accent: var(--color-background);
+  --accent-secondary: var(--color-secondary);
+  --background: var(--color-background);
+  --surface: color-mix(in srgb, var(--color-background) 90%, var(--color-secondary));
+  --glass: var(--color-glass);
+  --text: var(--color-text);
+  --muted: var(--color-muted);
+  --border: var(--color-glass-border);
+  --shadow: var(--color-shadow);
   --radius: 1.15rem;
   --wrap: 1180px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -503,6 +824,15 @@ ul { margin: 0; padding: 0; list-style: none; }
   background-size: 4.5rem 4.5rem;
   mask-image: linear-gradient(to bottom, #000, transparent 75%);
 }
+/* Geometría hexagonal discreta, inspirada en el afiche. */
+.hex {
+  position: absolute; aspect-ratio: 1; opacity: 0.5;
+  clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%);
+  background: linear-gradient(135deg, var(--color-glass), transparent 70%);
+  outline: 1px solid var(--color-glass-border);
+}
+.hex--one { top: 9%; right: 6%; width: min(20vw, 15rem); transform: rotate(12deg); }
+.hex--two { bottom: 6%; left: 4%; width: min(16vw, 11rem); transform: rotate(-18deg); background: linear-gradient(135deg, rgba(145, 93, 240, 0.07), transparent 70%); }
 
 /* Navegación */
 .nav {
@@ -554,14 +884,17 @@ ul { margin: 0; padding: 0; list-style: none; }
 .btn--ghost { background: var(--glass); border-color: var(--border); backdrop-filter: blur(12px); }
 .btn--muted { background: var(--glass); border-color: var(--border); color: var(--muted); cursor: default; }
 .btn--muted:hover { transform: none; filter: none; }
-.countdown { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.6rem; min-height: 2.6rem; }
+.countdown { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 1.6rem; min-height: 2.6rem; }
+.count__lead { align-self: center; margin-right: 0.2rem; color: var(--muted); font: 700 0.8rem/1 ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
 .count {
   display: grid; place-items: center; min-width: 4.2rem; padding: 0.4rem 0.6rem;
   border: 1px solid var(--border); border-radius: 0.7rem; background: var(--glass);
 }
 .count strong { font: 800 1.3rem/1 ui-monospace, monospace; }
 .count span { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
-.count__done { align-self: center; color: var(--accent); font-weight: 700; }
+.count__done { align-self: center; color: var(--accent); font: 800 0.95rem/1.2 ui-monospace, monospace; letter-spacing: 0.12em; }
+.count__done--running { color: var(--accent-secondary); }
+.count__done--finished { color: var(--muted); }
 
 /* Afiche */
 .poster { margin: 0; }
@@ -681,15 +1014,11 @@ write_js() {
     background: body.dataset.background || ""
   };
 
-  /* --- Paleta derivada del afiche --- */
+  /* --- Paleta fija: nunca se extraen colores del afiche --- */
   function hexToRgb(hex) {
     var value = String(hex).replace("#", "");
     if (!/^[0-9a-f]{6}$/i.test(value)) return null;
     return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)];
-  }
-  function rgbToHex(r, g, b) {
-    var part = function (n) { return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0"); };
-    return "#" + part(r) + part(g) + part(b);
   }
   function luminance(hex) {
     var rgb = hexToRgb(hex);
@@ -704,134 +1033,24 @@ write_js() {
     var x = luminance(a), y = luminance(b);
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
   }
-  function mix(a, b, amount) {
-    var x = hexToRgb(a) || [80, 120, 255];
-    var y = hexToRgb(b) || [10, 15, 30];
-    return rgbToHex(x[0] + (y[0] - x[0]) * amount, x[1] + (y[1] - x[1]) * amount, x[2] + (y[2] - x[2]) * amount);
-  }
-  function saturation(hex) {
-    var rgb = hexToRgb(hex);
-    if (!rgb) return 0;
-    var max = Math.max(rgb[0], rgb[1], rgb[2]);
-    var min = Math.min(rgb[0], rgb[1], rgb[2]);
-    return max ? (max - min) / max : 0;
-  }
-  function rgbToHsl(rgb) {
-    var r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
-    var max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
-    var l = (max + min) / 2, h = 0, s = 0;
-    if (delta) {
-      s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-      if (max === r) h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
-      else if (max === g) h = ((b - r) / delta + 2) / 6;
-      else h = ((r - g) / delta + 4) / 6;
-    }
-    return [h, s, l];
-  }
-  function hslToHex(h, s, l) {
-    function channel(n) {
-      var k = (n + h * 12) % 12;
-      return l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-    }
-    return rgbToHex(channel(0) * 255, channel(8) * 255, channel(4) * 255);
-  }
-  // Aclara manteniendo tono y saturación hasta lograr contraste legible.
-  function readable(color, background, target) {
-    var rgb = hexToRgb(color);
-    if (!rgb) return color;
-    var hsl = rgbToHsl(rgb);
-    var sat = Math.max(0.45, hsl[1]);
-    var candidate = color;
-    for (var l = hsl[2]; l <= 0.95; l += 0.04) {
-      candidate = hslToHex(hsl[0], sat, l);
-      if (contrast(candidate, background) >= target) return candidate;
-    }
-    return candidate;
-  }
-  function applyPalette(p) {
-    var background = p.background;
-    var text = contrast("#ffffff", background) >= contrast("#101525", background) ? "#ffffff" : "#101525";
-    var accent = readable(p.accent, background, 4.5);
-    var onAccent = contrast(accent, "#08110a") >= 4.5 ? "#08110a" : "#ffffff";
-    var secondary = readable(p.secondary, background, 2.2);
-    for (var i = 0; i < 12 && contrast("#ffffff", secondary) < 4.5; i++) {
-      secondary = mix(secondary, "#000000", 0.08);
-    }
+  function applyTheme() {
+    if (!manual.accent && !manual.secondary && !manual.background) return;
+    var accent = manual.accent || "#00FFA3";
+    var secondary = manual.secondary || "#915DF0";
+    var background = manual.background || "#080D12";
     var values = {
-      "--accent": accent,
-      "--on-accent": onAccent,
-      "--accent-secondary": secondary,
-      "--background": background,
-      "--surface": mix(background, p.secondary, 0.12),
-      "--text": text,
-      "--muted": mix(text, background, 0.38),
-      "--border": text === "#ffffff" ? "rgba(255,255,255,0.14)" : "rgba(16,26,52,0.14)",
-      "--glass": text === "#ffffff" ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.62)",
-      "--shadow": text === "#ffffff" ? "rgba(2,6,18,0.55)" : "rgba(31,45,84,0.16)"
+      "--color-primary": accent,
+      "--color-secondary": secondary,
+      "--color-background": background,
+      "--on-accent": contrast(accent, "#000000") >= contrast(accent, "#FFFFFF") ? "#000000" : "#FFFFFF"
     };
+    if (contrast("#FFFFFF", background) < 4.5) {
+      values["--color-text"] = "#0B1020";
+      values["--color-muted"] = "rgba(11, 16, 32, 0.75)";
+      values["--color-glass"] = "rgba(11, 16, 32, 0.05)";
+      values["--color-glass-border"] = "rgba(11, 16, 32, 0.22)";
+    }
     Object.keys(values).forEach(function (key) { root.style.setProperty(key, values[key]); });
-  }
-  function fallbackPalette() {
-    return { accent: "#a3e635", secondary: "#4f7cff", background: "#0a0f1d" };
-  }
-  function sampleImage(image) {
-    return new Promise(function (resolve) {
-      try {
-        var canvas = document.createElement("canvas");
-        canvas.width = 40; canvas.height = 40;
-        var ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (!ctx) return resolve([]);
-        ctx.drawImage(image, 0, 0, 40, 40);
-        var data = ctx.getImageData(0, 0, 40, 40).data;
-        var buckets = new Map();
-        for (var i = 0; i < data.length; i += 16) {
-          if (data[i + 3] < 200) continue;
-          var key = Math.round(data[i] / 32) + "," + Math.round(data[i + 1] / 32) + "," + Math.round(data[i + 2] / 32);
-          var entry = buckets.get(key);
-          if (entry) { entry.n++; entry.r += data[i]; entry.g += data[i + 1]; entry.b += data[i + 2]; }
-          else buckets.set(key, { n: 1, r: data[i], g: data[i + 1], b: data[i + 2] });
-        }
-        resolve(Array.from(buckets.values()).sort(function (a, b) { return b.n - a.n; })
-          .map(function (e) { return { hex: rgbToHex(e.r / e.n, e.g / e.n, e.b / e.n), n: e.n }; }));
-      } catch (error) { resolve([]); }
-    });
-  }
-  function loadTheme() {
-    var base = fallbackPalette();
-    if (manual.accent || manual.secondary || manual.background) {
-      applyPalette({
-        accent: manual.accent || base.accent,
-        secondary: manual.secondary || base.secondary,
-        background: manual.background || base.background
-      });
-      return Promise.resolve();
-    }
-    applyPalette(base);
-    var image = document.getElementById("poster-image");
-    if (!image) return Promise.resolve();
-    function derive() {
-      return sampleImage(image).then(function (colors) {
-        if (!colors.length) return;
-        var primary = colors[0].hex;
-        var candidates = colors.slice(0, 14).filter(function (c) { return c.n >= 2; });
-        var vivid = candidates.slice().sort(function (a, b) {
-          return saturation(b.hex) * Math.sqrt(b.n) - saturation(a.hex) * Math.sqrt(a.n);
-        })[0];
-        var secondary = (colors.slice(0, 10).find(function (c) {
-          return c.hex !== primary && contrast(c.hex, primary) > 1.3;
-        }) || {}).hex || base.secondary;
-        applyPalette({
-          accent: vivid ? vivid.hex : base.accent,
-          secondary: secondary,
-          background: mix(primary, "#070b16", 0.9)
-        });
-      });
-    }
-    if (image.complete && image.naturalWidth) return derive();
-    return new Promise(function (resolve) {
-      image.addEventListener("load", function () { derive().then(resolve); }, { once: true });
-      image.addEventListener("error", resolve, { once: true });
-    });
   }
 
   /* --- Countdown --- */
@@ -841,41 +1060,72 @@ write_js() {
     try {
       var parts = new Intl.DateTimeFormat("en-US", {
         timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
       }).formatToParts(now).reduce(function (acc, p) { acc[p.type] = p.value; return acc; }, {});
-      return new Date(parts.year + "-" + parts.month + "-" + parts.day + "T" + parts.hour + ":" + parts.minute + ":" + parts.second + "Z");
+      var hour = parts.hour === "24" ? "00" : parts.hour;
+      return new Date(parts.year + "-" + parts.month + "-" + parts.day + "T" + hour + ":" + parts.minute + ":" + parts.second + "Z");
     } catch (error) { return now; }
   }
   function countdown() {
     var holder = document.querySelector("[data-countdown]");
     if (!holder) return;
-    var raw = body.dataset.date + "T" + body.dataset.time + ":00";
-    var target = new Date(body.dataset.tz ? raw + "Z" : raw).getTime();
-    if (!isFinite(target)) return;
-    function tick() {
-      var diff = Math.floor((target - zonedNow(body.dataset.tz).getTime()) / 1000);
-      if (diff <= 0) {
-        holder.textContent = "";
-        var done = document.createElement("span");
-        done.className = "count__done";
-        done.textContent = "El evento ya comenzó";
-        holder.appendChild(done);
-        return;
-      }
+    var live = document.getElementById("countdown-live");
+    var tz = body.dataset.tz;
+    var startRaw = body.dataset.date + "T" + body.dataset.time + ":00";
+    var start = new Date(tz ? startRaw + "Z" : startRaw).getTime();
+    if (!isFinite(start)) return;
+
+    var end = 0;
+    if (body.dataset.endDate && body.dataset.endTime) {
+      var endRaw = body.dataset.endDate + "T" + body.dataset.endTime + ":00";
+      var parsedEnd = new Date(tz ? endRaw + "Z" : endRaw).getTime();
+      if (isFinite(parsedEnd) && parsedEnd > start) end = parsedEnd;
+    }
+    var starting = Number(body.dataset.startingDuration);
+    if (!isFinite(starting) || starting < 0) starting = 0;
+    var lastAnnouncement = "";
+
+    function announce(text) {
+      if (!live || text === lastAnnouncement) return;
+      lastAnnouncement = text;
+      live.textContent = text;
+    }
+    function setBoxes(diff) {
+      holder.textContent = "";
+      var lead = document.createElement("span");
+      lead.className = "count__lead";
+      lead.textContent = "Faltan";
+      holder.appendChild(lead);
       var units = [["días", Math.floor(diff / 86400)], ["horas", Math.floor(diff % 86400 / 3600)],
                    ["min", Math.floor(diff % 3600 / 60)], ["seg", diff % 60]];
-      if (holder.children.length !== units.length) {
-        holder.textContent = "";
-        units.forEach(function (unit) {
-          var box = document.createElement("div");
-          box.className = "count";
-          var value = document.createElement("strong");
-          var label = document.createElement("span");
-          label.textContent = unit[0];
-          box.appendChild(value); box.appendChild(label); holder.appendChild(box);
-        });
-      }
-      units.forEach(function (unit, index) { holder.children[index].firstChild.textContent = unit[1]; });
+      units.forEach(function (unit) {
+        var box = document.createElement("div");
+        box.className = "count";
+        var value = document.createElement("strong");
+        var label = document.createElement("span");
+        value.textContent = unit[1];
+        label.textContent = unit[0];
+        box.appendChild(value); box.appendChild(label); holder.appendChild(box);
+      });
+      announce("Faltan " + units[0][1] + " días, " + units[1][1] + " horas, " + units[2][1] + " minutos");
+    }
+    function setState(text, modifier) {
+      if (holder.firstChild && holder.firstChild.className === "count__done" &&
+          holder.firstChild.textContent === text) return;
+      holder.textContent = "";
+      var done = document.createElement("span");
+      done.className = "count__done" + (modifier ? " count__done--" + modifier : "");
+      done.textContent = text;
+      holder.appendChild(done);
+      announce(text);
+    }
+    function tick() {
+      var now = zonedNow(tz).getTime();
+      if (!isFinite(now)) return;
+      if (end && now >= end) { setState("FIN DEL EVENTO", "finished"); return; }
+      if (now < start) { setBoxes(Math.floor((start - now) / 1000)); return; }
+      if (now < start + starting * 1000) { setState("INICIANDO"); return; }
+      setState("EVENTO EN CURSO", "running");
     }
     tick();
     window.setInterval(tick, 1000);
@@ -949,7 +1199,7 @@ write_js() {
       var img = slide.querySelector("img");
       if (!img) return { src: "", alt: "", caption: "" };
       var caption = slide.querySelector("figcaption");
-      return { src: img.src, alt: img.alt || "Imagen " + (i + 1), caption: caption ? caption.textContent : "" };
+      return { src: img.currentSrc || img.src, alt: img.alt || "Imagen " + (i + 1), caption: caption ? caption.textContent : "" };
     }).filter(function (item) { return item.src; });
 
     slides.forEach(function (slide, i) {
@@ -1070,11 +1320,11 @@ write_js() {
   if (posterButton) {
     var posterImage = document.getElementById("poster-image");
     posterButton.addEventListener("click", function () {
-      openLightbox([{ src: posterImage.src, alt: posterImage.alt, caption: "" }], 0);
+      openLightbox([{ src: posterImage.currentSrc || posterImage.src, alt: posterImage.alt, caption: "" }], 0);
     });
   }
 
-  loadTheme();
+  applyTheme();
   countdown();
   slider();
 })();
@@ -1082,18 +1332,40 @@ JS
 }
 
 build() {
+  prepare_webp
   mkdir -p -- "$BUILD_DIR/assets/slider" || die "no se pudo crear el directorio de construcción"
+  mkdir -p -- "$(dirname -- "$BUILD_DIR/assets/${POSTER#assets/}")" ||
+    die "no se pudo crear el directorio del afiche"
   cp -- "$POSTER_PATH" "$BUILD_DIR/assets/${POSTER#assets/}" || die "no se pudo copiar el afiche"
+  if ((WEBP_POSTER)); then
+    mkdir -p -- "$(dirname -- "$BUILD_DIR/$(webp_rel_for "$POSTER")")" ||
+      die "no se pudo crear el directorio del afiche WebP"
+    cp -- "$(webp_cache_for "$POSTER_PATH")" "$BUILD_DIR/$(webp_rel_for "$POSTER")" ||
+      die "no se pudo copiar el afiche WebP"
+  fi
   if (( ${#SLIDER_PATHS[@]} > 0 )); then
-    local image rel
+    local image rel i=0
     for image in "${SLIDER_PATHS[@]}"; do
       rel=${image#"$PROJECT_DIR"/assets/}
+      mkdir -p -- "$(dirname -- "$BUILD_DIR/assets/$rel")" ||
+        die "no se pudo crear el directorio de: $rel"
       cp -- "$image" "$BUILD_DIR/assets/$rel" || die "no se pudo copiar: $rel"
+      if (( ${WEBP_SLIDER[$i]:-0} > 0 )); then
+        mkdir -p -- "$(dirname -- "$BUILD_DIR/$(webp_rel_for "$image")")" ||
+          die "no se pudo crear el directorio WebP de: $rel"
+        cp -- "$(webp_cache_for "$image")" "$BUILD_DIR/$(webp_rel_for "$image")" ||
+          die "no se pudo copiar la versión WebP de: $rel"
+      fi
+      i=$((i + 1))
     done
   fi
   if [[ -f "$PROJECT_DIR/assets/favicon.png" ]]; then
     cp -- "$PROJECT_DIR/assets/favicon.png" "$BUILD_DIR/assets/favicon.png" ||
       die "no se pudo copiar el favicon"
+    if ((WEBP_FAVICON)); then
+      cp -- "$(webp_cache_for "$PROJECT_DIR/assets/favicon.png")" "$BUILD_DIR/assets/favicon.webp" ||
+        die "no se pudo copiar el favicon WebP"
+    fi
   fi
 
   write_html "$BUILD_DIR/index.html"
@@ -1104,8 +1376,9 @@ build() {
     die "la salida generada está incompleta"
   grep -q '<title>' "$BUILD_DIR/index.html" || die "index.html no tiene título"
 
-  echo "$CNAME_NAME" > "$BUILD_DIR/CNAME"
-
+  if [[ -n "$CNAME_NAME" ]]; then
+    echo "$CNAME_NAME" > "$BUILD_DIR/CNAME"
+  fi
 }
 
 publish() {
@@ -1139,9 +1412,12 @@ main() {
 
   log "evento:      $EVENT_NAME"
   log "modalidad:   $EVENT_MODE"
-  log "fecha:       $EVENT_DATE $EVENT_TIME ($EVENT_TIMEZONE)"
+  log "inicio:      $EVENT_DATE $EVENT_TIME ($EVENT_TIMEZONE)"
+  log "fin:         ${EVENT_END_DATE:-sin fecha de fin} ${EVENT_END_TIME:-}"
   log "afiche:      $POSTER"
   log "slider:      ${#SLIDER_PATHS[@]} imágenes"
+  log "detalles:    $SHOW_EVENT_DETAILS"
+  log "charlas:     $SHOW_TALKS ($SECTION_TALKS_TITLE)"
   log "registro:    $REGISTER_ENABLED"
   log "assets:      $ASSET_COUNT"
 }

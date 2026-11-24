@@ -7,25 +7,26 @@ La salida es un sitio estático listo para GitHub Pages, Netlify o cualquier hos
 ## Requisitos
 
 - Bash 5 o superior.
-- Herramientas estándar de Linux: `cp`, `mkdir`, `mv`, `rm`, `grep`, `date`.
-- Un navegador moderno para ver el resultado.
+- Herramientas estándar de Linux: `cp`, `mkdir`, `mv`, `rm`, `grep`, `date`, `file`.
+- Opcional para WebP: `cwebp`, ImageMagick (`magick`/`convert`) o `ffmpeg` con libwebp.
 
-No hay nada que instalar.
+Sin herramienta WebP el sitio se genera igual, sirviendo los originales.
 
 ## Estructura
 
 ```
 generate.sh              Configuración + generador
 assets/
-  poster.svg             Afiche del evento
+  poster.png             Afiche del evento
   logo.svg               Logo (opcional)
   favicon.png            Favicon (opcional)
-  slider/01.svg ...      Imágenes adicionales
+  slider/01.png ...      Imágenes de charlas y participantes
 public/                  Sitio generado (se regenera en cada ejecución)
   index.html
   style.css
   script.js
-  assets/
+  assets/                Originales + versiones WebP cuando están disponibles
+.webp-cache/             Caché WebP ignorada por Git; no se publica
 ```
 
 ## Configuración
@@ -48,23 +49,43 @@ REGISTER_ENABLED=true
 REGISTER_URL="https://example.org/registro"
 REGISTER_LABEL="Registrarme"
 
-POSTER="assets/poster.svg"
+POSTER="assets/poster.png"
 POSTER_ALT="Afiche del evento"
 
 SLIDER_IMAGES=(
-  "assets/slider/01.svg"
-  "assets/slider/02.svg"
+  "assets/slider/01.png"
+  "assets/slider/02.png"
 )
 SLIDER_INTERVAL=5000             # milisegundos (1000-120000)
 
+SHOW_EVENT_DETAILS=true
+SHOW_TALKS=true
+SECTION_TALKS_TITLE="Charlas y participantes"
+
+EVENT_END_DATE=""                # AAAA-MM-DD; vacío = sin fin
+EVENT_END_TIME=""                # HH:MM; vacío = 23:59
+EVENT_STARTING_DURATION=300      # segundos del estado INICIANDO
+
+CONVERT_WEBP=true
+WEBP_QUALITY=82
+WEBP_LOSSLESS=false
+WEBP_INSTALL_TOOLS=false
+
 OUTPUT_DIR="public"
+CNAME_NAME="eventos.nluagrm.org"
 ```
 
 ### Afiche
 
-Coloca tu imagen en `assets/` y ajusta `POSTER`. Se admiten `png`, `jpg`, `jpeg`, `webp`, `svg`, `avif` y `gif`. El afiche se muestra sin deformar, se puede ampliar con clic o teclado y es la imagen que más influye en la paleta de colores. No uses rutas absolutas ni `..`.
+Coloca tu imagen en `assets/` y ajusta `POSTER`. Se admiten `png`, `jpg`, `jpeg`, `webp`, `svg`, `avif` y `gif`. El afiche se muestra sin deformar y se puede ampliar con clic o teclado. La identidad visual no cambia cuando cambia el afiche. No uses rutas absolutas ni `..`.
 
-### Slider
+### Detalles del evento
+
+`SHOW_EVENT_DETAILS=true` muestra la lista de fecha, hora y lugar y su enlace en la navegación. Con `false` no se renderiza el bloque ni el enlace. El contador sigue funcionando de forma independiente.
+
+### Charlas y participantes
+
+`SHOW_TALKS=true` muestra las fichas de `SLIDER_IMAGES` y su enlace de navegación. El título se configura con `SECTION_TALKS_TITLE` y aparece en el encabezado, la navegación y la etiqueta accesible del carrusel. Con `false` no se genera la sección ni su enlace. Es independiente de `SHOW_EVENT_DETAILS`.
 
 Agrega o quita rutas en `SLIDER_IMAGES`. Funciona con cero, una o varias imágenes:
 
@@ -90,19 +111,54 @@ Con `REGISTER_ENABLED=true` se genera el botón hacia `REGISTER_URL` con el text
 
 ### Fecha, hora y zona horaria
 
-`EVENT_DATE` usa `AAAA-MM-DD`, `EVENT_TIME` usa `HH:MM` (24 horas) y `EVENT_TIMEZONE` es un identificador como `America/La_Paz` o `Europe/Madrid`. Se muestra un contador regresivo; cuando llega la hora cambia a «El evento ya comenzó». Si la zona no es válida, se usa la hora local del navegador.
+`EVENT_DATE` usa `AAAA-MM-DD`, `EVENT_TIME` usa `HH:MM` (24 horas) y `EVENT_TIMEZONE` es un identificador válido como `America/La_Paz`. El inicio es absoluto y no depende del reloj del visitante.
+
+`EVENT_END_DATE` y `EVENT_END_TIME` son opcionales. El contador tiene cuatro estados:
+
+1. Antes del inicio: «Faltan» con días, horas, minutos y segundos.
+2. Desde el inicio durante `EVENT_STARTING_DURATION` segundos: «INICIANDO».
+3. Hasta la hora final (o sin límite si no se configura): «EVENTO EN CURSO».
+4. Al alcanzar la hora final: «FIN DEL EVENTO».
+
+Una fecha final anterior al inicio se rechaza durante la validación.
 
 ### Colores
 
-Por defecto, `script.js` extrae los colores dominantes del afiche con Canvas y genera una paleta legible (contraste mínimo 4.5:1). Si quieres fijar colores manuales:
+Paleta fija inspirada en el afiche HackPoint, centralizada en `public/style.css`:
 
-```bash
-COLOR_ACCENT="#a3e635"
-COLOR_SECONDARY="#4f7cff"
-COLOR_BACKGROUND="#0a0f1d"
+```css
+--color-background: #080D12;   --color-primary: #00FFA3;
+--color-secondary: #915DF0;   --color-text: #FFFFFF;
+--color-muted: rgba(255,255,255,0.72);
+--color-glass: rgba(0,255,163,0.045);
+--color-glass-border: rgba(0,255,163,0.22);
 ```
 
-Deja una variable vacía para seguir derivando ese color del afiche.
+No se extraen colores del afiche en tiempo de ejecución. Si necesitas otros colores, sobrescribe manualmente:
+
+```bash
+COLOR_ACCENT="#00FFA3"
+COLOR_SECONDARY="#915DF0"
+COLOR_BACKGROUND="#080D12"
+```
+
+Deja una variable vacía para conservar el valor de la identidad.
+
+### Optimización WebP
+
+Con `CONVERT_WEBP=true`, el generador convierte el afiche, las imágenes de charlas y el favicon si hay una herramienta disponible, en este orden: `cwebp`, ImageMagick y `ffmpeg` con libwebp. El HTML usa `<picture>` con WebP y mantiene el original como fallback; los originales nunca se modifican. Las copias se guardan en `.webp-cache/` y se reutilizan si son más recientes que el original (idempotente). Los SVG se sirven tal cual.
+
+Calidad por defecto: `WEBP_QUALITY=82` (1-100). Para gráficos que requieren exactitud, `WEBP_LOSSLESS=true` ignora la calidad.
+
+Si no hay herramienta, se informa el gestor de paquetes según el sistema (`apt`, `dnf`, `yum`, `pacman`, `zypper` o `apk`) y se continúa sin conversión. Ejemplos de instalación manual:
+
+```bash
+sudo apt install webp
+sudo dnf install libwebp-tools
+sudo pacman -S libwebp
+```
+
+El script nunca usa `sudo` automáticamente. Para proponer una instalación interactiva, activa `WEBP_INSTALL_TOOLS=true`; sin terminal o sin confirmación no instala nada.
 
 ## Uso
 
@@ -136,8 +192,6 @@ busybox httpd -f -p 127.0.0.1:8123 -h public
 # abre http://127.0.0.1:8123/
 ```
 
-También sirve `python3 -m http.server 8123 --directory public` si lo prefieres, aunque el proyecto no lo requiere.
-
 ## GitHub Pages
 
 El repositorio incluye `.github/workflows/build-pages.yml`:
@@ -151,7 +205,7 @@ Si prefieres publicar sin Actions, ejecuta `./generate.sh` y commitea el conteni
 ## Seguridad y accesibilidad
 
 - `set -Eeuo pipefail`, comillas en todas las variables, sin `eval`.
-- Validación de fechas, horas, URLs, modos, rutas, symlinks y formatos de imagen.
-- Todo el texto se escapa antes de escribir HTML.
-- HTML semántico, navegación por teclado, foco visible, ARIA en slider y lightbox, `alt` en imágenes, `reduced-motion` y objetivos táctiles amplios.
-- Paleta con contraste verificado; Lighthouse: accesibilidad, buenas prácticas y SEO en 1.00.
+- Validación de fechas, horas, zona horaria, URLs, modos, switches, rutas, symlinks y formatos de imagen.
+- Todo el texto se escapa antes de escribir HTML; sin `eval` ni instalaciones silenciosas.
+- HTML semántico, navegación por teclado, foco visible, ARIA en slider, lightbox y countdown, `alt` en imágenes, `reduced-motion` y objetivos táctiles amplios.
+- Paleta fija con contraste verificado.

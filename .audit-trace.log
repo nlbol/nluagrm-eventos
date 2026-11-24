@@ -1,0 +1,72 @@
++ set -Eeuo pipefail
++++ dirname -- .audit-tests.sh
+++ cd -- .
+++ pwd -P
++ ROOT=/home/fershouno/workspace/git/nlbol/nluagrm-eventos
++ TMP=/home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp
++ IMG=/home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit
++ rm -rf -- /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit
++ mkdir -p /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/webp /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/out /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit
++ PASS=0
++ FAIL=0
++ CASE_STATUS=0
++ CASE_PATH=
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v sed
++ ln -sf /usr/bin/sed /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/sed
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v grep
++ ln -sf /usr/bin/grep /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/grep
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v cp
++ ln -sf /usr/bin/cp /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/cp
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v mkdir
++ ln -sf /usr/bin/mkdir /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/mkdir
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v mv
++ ln -sf /usr/bin/mv /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/mv
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v rm
++ ln -sf /usr/bin/rm /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/rm
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v date
++ ln -sf /usr/bin/date /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/date
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v file
++ ln -sf /usr/bin/file /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/file
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v dirname
++ ln -sf /usr/bin/dirname /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/dirname
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v basename
++ ln -sf /usr/bin/basename /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/basename
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v uname
++ ln -sf /usr/bin/uname /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/uname
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v head
++ ln -sf /usr/bin/head /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/head
++ for tool in sed grep cp mkdir mv rm date file dirname basename uname head cat
+++ command -v cat
++ ln -sf /usr/bin/cat /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-tmp/bin/cat
++ convert -size 40x60 xc:none -fill '#00FFA3' -draw 'circle 20,30 20,5' /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/transparente.png
++ convert /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/transparente.png /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/foto.jpg
++ cp -- /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.webp-cache/poster.webp /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/ya.webp
++ cp -- /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/transparente.png '/home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/con espacio.png'
++ cp -- /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/transparente.png /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/afiche_único.png
++ head -c 120 /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/favicon.png
+++ sha256sum /home/fershouno/workspace/git/nlbol/nluagrm-eventos/assets/.audit/transparente.png
+++ cut '-d ' -f1
++ original_sum=1e6b06953c82ca371dec48ae35d21691b9b279f0f4d37eaacb3a57a8e7888220
++ P=assets/.audit/transparente.png
++ case_gen png assets/.audit/transparente.png
++ local name=png poster=assets/.audit/transparente.png slides=0
++ local out=.audit-tmp/out/png expr
++ local script=/home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-png.sh
++ cp -- /home/fershouno/workspace/git/nlbol/nluagrm-eventos/generate.sh /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-png.sh
++ sed -i 's|^POSTER=.*|POSTER="assets/.audit/transparente.png"|' /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-png.sh
++ sed -i 's|^OUTPUT_DIR=.*|OUTPUT_DIR=".audit-tmp/out/png"|' /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-png.sh
++ sed -i '/^SLIDER_IMAGES=(/,/^)/c\SLIDER_IMAGES=()' /home/fershouno/workspace/git/nlbol/nluagrm-eventos/.audit-png.sh
++ [[ 0 == 1 ]]
++ shift 3

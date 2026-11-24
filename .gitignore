@@ -1,4 +1,6 @@
 /.build.*
+/.webp-cache/
+/.audit-*/
 /.smoke*
 *.bak
 .DS_Store
