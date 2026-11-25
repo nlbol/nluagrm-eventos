@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Una jornada de la comunidad GNU/Linux y Seguridad Informatica: charlas y demos.">
+<meta name="theme-color" content="#080D12">
+<meta name="generator" content="generate.sh">
+<title>HackPoint</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body id="inicio" data-interval="5000" data-date="2026-12-06" data-time="09:00" data-tz="America/La_Paz" data-starting-duration="300" data-accent="" data-secondary="" data-background="">
+
+<div class="ambient" aria-hidden="true">
+  <span class="orb orb--one"></span>
+  <span class="orb orb--two"></span>
+  <span class="hex hex--one"></span>
+  <span class="hex hex--two"></span>
+  <span class="grid"></span>
+</div>
+
+<a class="skip" href="#contenido">Saltar al contenido</a>
+
+<header class="nav">
+  <div class="wrap nav__inner">
+    <a class="brand" href="#inicio"><span class="brand__prompt" aria-hidden="true">&gt;_</span> HackPoint</a>
+    <nav class="nav__links" aria-label="Navegación principal">
+      <a href="#charlas">Charlas y participantes</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenido">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero__grid">
+      <div class="hero__copy">
+        <span class="badge badge--online">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.5a5.5 5.5 0 0 1 5.5-5.5h9A5.5 5.5 0 0 1 22 8.5v7a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 15.5zM2.6 7.3l8.1 5.2a1.6 1.6 0 0 0 1.7 0l8.1-5.2"/></svg>
+          Evento online
+        </span>
+        <h1 id="hero-title">HackPoint</h1>
+        <p class="lead">Una jornada de la comunidad GNU/Linux y Seguridad Informatica: charlas y demos.</p>
+
+
+
+        <div class="actions">
+          
+          <a class="btn btn--primary" href="https://meet.google.com/rwj-hocw-buf" target="_blank" rel="noopener noreferrer">Participar online <span aria-hidden="true">↗</span></a>
+        </div>
+
+        <div class="countdown" data-countdown></div>
+        <p class="sr-only" id="countdown-live" aria-live="polite" aria-atomic="true"></p>
+      </div>
+
+      <figure class="poster" id="poster">
+        <button class="poster__open" type="button" aria-label="Ampliar afiche del evento">
+          <img id="poster-image" src="assets/poster.png" alt="Afiche de HackPoint 2026" width="720" height="960" decoding="async">
+        </button>
+        <figcaption>Afiche de HackPoint 2026</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section section--talks" id="charlas" aria-labelledby="charlas-title">
+    <span class="sr-only" id="destacos"></span>
+    <div class="wrap">
+      <div class="section__head">
+        <p class="eyebrow">Programa</p>
+        <h2 id="charlas-title">Charlas y participantes</h2>
+      </div>
+      <div class="slider" id="slider" role="region" aria-roledescription="carrusel" aria-label="Charlas y participantes" tabindex="0">
+        <div class="slider__viewport">
+          <div class="slider__track" id="slider-track">
+          <figure class="slide"><button class="slide__open" type="button" aria-label="Ampliar imagen 1"><img src="assets/slider/01.png" alt="Imagen destacada 1" loading="lazy" decoding="async"></button></figure>
+          <figure class="slide"><button class="slide__open" type="button" aria-label="Ampliar imagen 2"><img src="assets/slider/02.png" alt="Imagen destacada 2" loading="lazy" decoding="async"></button></figure>
+          <figure class="slide"><button class="slide__open" type="button" aria-label="Ampliar imagen 3"><img src="assets/slider/03.png" alt="Imagen destacada 3" loading="lazy" decoding="async"></button></figure>
+
+          </div>
+        </div>
+        <button class="slider__nav slider__prev" id="slider-prev" type="button" aria-label="Imagen anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+        </button>
+        <button class="slider__nav slider__next" id="slider-next" type="button" aria-label="Imagen siguiente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+        <div class="slider__dots" id="slider-dots" role="group" aria-label="Seleccionar imagen"></div>
+        <button class="slider__toggle" id="slider-toggle" type="button" aria-pressed="false" aria-label="Pausar reproducción automática">Pausar</button>
+        <p class="sr-only" id="slider-live" aria-live="polite" aria-atomic="true"></p>
+      </div>
+      <p class="section__hint">Usa las flechas, las teclas ← → o desliza para explorar. Toca una imagen para ampliarla.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <p><span class="brand__prompt" aria-hidden="true">&gt;_</span> HackPoint</p>
+    <p>Hecho con Software Libre · America/La_Paz</p>
+  </div>
+</footer>
+
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lightbox__backdrop" data-close></div>
+  <div class="lightbox__dialog" role="dialog" aria-modal="true" aria-label="Imagen ampliada">
+    <button class="lightbox__btn lightbox__close" id="lightbox-close" type="button" aria-label="Cerrar imagen ampliada">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <button class="lightbox__btn lightbox__prev" id="lightbox-prev" type="button" aria-label="Imagen anterior">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+    </button>
+    <button class="lightbox__btn lightbox__next" id="lightbox-next" type="button" aria-label="Imagen siguiente">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+    </button>
+    <figure class="lightbox__figure">
+      <img id="lightbox-image" alt="" decoding="async">
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
+</div>
+
+<script src="script.js" defer></script>
+</body>
+</html>
