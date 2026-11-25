@@ -17,9 +17,9 @@ EVENT_TIMEZONE="America/La_Paz"
 EVENT_MODE="online"
 EVENT_LOCATION="Santa Cruz de la Sierra, Bolivia"
 EVENT_MAP_URL="https://www.openstreetmap.org/search?query=Santa%20Cruz%20de%20la%20Sierra"
-EVENT_URL="https://meet.google.com"
+EVENT_URL="https://meet.google.com/rwj-hocw-buf"
 
-REGISTER_ENABLED=true
+REGISTER_ENABLED=false
 REGISTER_URL="https://cloud.nluagrm.org/"
 REGISTER_LABEL="Registrarme"
 
@@ -32,7 +32,7 @@ SLIDER_IMAGES+=("assets/.audit/foto.jpg")
 SLIDER_INTERVAL=5000
 
 # Secciones independientes.
-SHOW_EVENT_DETAILS=true
+SHOW_EVENT_DETAILS=false
 SHOW_TALKS=false
 SECTION_TALKS_TITLE="Charlas y participantes"
 
@@ -925,9 +925,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 .slider__nav svg { fill: none; stroke: currentColor; stroke-width: 2; }
 .slider__prev { left: 1.1rem; }
 .slider__next { right: 1.1rem; }
-.slider__toggle { right: 1.1rem; bottom: 1.1rem; padding: 0.45rem 0.9rem; font-size: 0.8rem; }
+.slider__toggle { right: 1.1rem; bottom: 1.1rem; min-height: 2.5rem; padding: 0.45rem 0.9rem; font-size: 0.8rem; }
 .slider__dots { position: absolute; left: 1.1rem; bottom: 1.1rem; z-index: 2; display: flex; gap: 0.4rem; }
-.slider__dots button { width: 1.75rem; height: 1.75rem; padding: 0.5rem; border: 0; border-radius: 50%; background: var(--muted); background-clip: content-box; opacity: 0.45; cursor: pointer; transition: opacity 0.2s, background 0.2s; }
+.slider__dots button { width: 2.5rem; height: 2.5rem; padding: 0.85rem; border: 0; border-radius: 50%; background: var(--muted); background-clip: content-box; opacity: 0.45; cursor: pointer; transition: opacity 0.2s, background 0.2s; }
 .slider__dots button[aria-current="true"] { background: var(--accent); opacity: 1; transform: scale(1.2); }
 
 /* Footer */
